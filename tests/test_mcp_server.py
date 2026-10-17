@@ -367,6 +367,41 @@ def test_proxy_hints_with_no_significant_pairs_returns_an_empty_list_not_an_erro
     assert "provenance" in result
 
 
+def test_proxy_hints_notes_when_too_few_dimensions_to_test(tmp_path):
+    # Proxy hints compare pairs of dimensions, so a single-dimension dataset has
+    # no pair to test and returns an empty `hints` list. A note says why, so the
+    # empty result is not read as "tested, found nothing" (#1041 is the sibling
+    # fix for benchmark filters; this is #1044).
+    path = tmp_path / "one.csv"
+    path.write_text("sex\nM\nF\nM\nF\n", encoding="utf-8")
+
+    result = _proxy_hints_impl(str(path))
+
+    assert result["hints"] == []
+    assert any(
+        "no proxy pairs were tested" in note and "at least two are needed" in note
+        for note in result.get("notes", [])
+    ), result.get("notes")
+
+    # A dataset with two associated dimensions is tested, so it carries no such note.
+    two = tmp_path / "two.csv"
+    two.write_text(
+        "sex,occupation\n"
+        + "\n".join(
+            f"{'male' if i % 2 == 0 else 'female'},"
+            f"{'engineer' if i % 2 == 0 else 'nurse'}"
+            for i in range(100)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    tested = _proxy_hints_impl(str(two))
+    assert tested["hints"]
+    assert not any(
+        "no proxy pairs were tested" in note for note in tested.get("notes", [])
+    )
+
+
 def test_proxy_hints_runtime_error_propagates_with_a_clean_message(tmp_path, monkeypatch):
     import faircode.mcp_server as mcp_server
 

@@ -391,12 +391,26 @@ def _proxy_hints_impl(path, overrides=None, held_out_with=None, alpha=None,
     kw.update(_exact_kwargs(exact_permutations, exact_max_rows))
     kw["max_age"] = resolved["max_age"]
     kw["age_reference_year"] = resolved["age_reference_year"]
-    output = {"hints": compute_proxy_hints(df, result["dimensions"], held_out=held_out, **kw)}
+    hints = compute_proxy_hints(df, result["dimensions"], held_out=held_out, **kw)
+    output = {"hints": hints}
     sheet_notes = [n for n in (_sheet_note(path),) if n]
     sheet_notes += [n for spec in (held_out_with or []) for n in (_sheet_note(partition_held_out_path(spec)[0]),) if n]
     if sheet_notes:
         output["sheet_notes"] = sheet_notes   # deprecated alias of the sheet entries in `notes` (#950)
     notes = sheet_notes + [n for n in (encoding_ignored_note(path, encoding),) if n] + held_notes
+    # Proxy hints compare *pairs* of dimensions, so fewer than two testable
+    # dimensions (detected dimensions plus any held-out columns) yields no pairs
+    # and an empty `hints` list. Say so, or an empty result reads as "tested,
+    # found nothing" rather than "nothing could be tested" (#1044).
+    if not hints:
+        testable = [d["name"] for d in result["dimensions"]] + list(held_out or {})
+        if len(testable) < 2:
+            shown = ", ".join(testable) if testable else "none"
+            notes = notes + [
+                f"no proxy pairs were tested: proxy hints compare pairs of "
+                f"dimensions and this dataset has {len(testable)} ({shown}); "
+                f"at least two are needed."
+            ]
     if notes:
         output["notes"] = notes
     _flag_deprecated_aliases(output)
